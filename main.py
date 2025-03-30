@@ -16,7 +16,6 @@ class ThreatDetectionApp:
             layout="wide"
         )
         
-        # Initialize session state variables
         if 'detection_active' not in st.session_state:
             st.session_state.detection_active = False
         
@@ -54,9 +53,8 @@ class ThreatDetectionApp:
     def load_models(self):
         """Load pre-trained and custom models"""
         try:
-            self.default_model = YOLO('best.pt')          # Default YOLO model
-            
-            # Optional: Load custom trained model if exists
+            self.default_model = YOLO('best.pt')
+
             try:
                 self.custom_model = YOLO('my_model.pt')
             except:
@@ -101,7 +99,7 @@ class ThreatDetectionApp:
 
     def detect_threats(self, frame, model, confidence, mode):
         """Perform threat detection on a single frame"""
-        results = model(frame, conf=confidence)[0]  # Run inference
+        results = model(frame, conf=confidence)[0]
         
         detected_classes = []
         if len(results.boxes) > 0:
@@ -109,39 +107,33 @@ class ThreatDetectionApp:
             for box in results.boxes:
                 detected_classes.append(class_names[int(box.cls[0])])
 
-        # Define the detection criteria - expanded to catch more possible threat labels
         if mode == "Thief Detection":
             threat_detected = any(cls.lower() in ["thief", "robber", "person", "intruder", "burglar"] for cls in detected_classes)
         elif mode == "Weapon Detection":
             threat_detected = any(cls.lower() in ["gun", "knife", "pistol", "rifle", "weapon", "handgun", "shotgun"] for cls in detected_classes)
-        else:  # Custom detection mode
+        else:
             threat_detected = len(detected_classes) > 0
 
-        annotated_frame = results.plot()  # Annotate frame
+        annotated_frame = results.plot()
         return annotated_frame, results, threat_detected, detected_classes
 
     def trigger_warnings(self, settings, detected_classes):
         """Trigger various warning mechanisms"""
         detected_str = ', '.join(set(detected_classes)) if detected_classes else "Potential Threat"
 
-        # Create a fixed location for warning messages
         if 'Visual Alert' in settings['warnings']:
-            # Create a persistent container for warnings if it doesn't exist
             if 'warning_container' not in st.session_state:
                 st.session_state.warning_container = st.container()
             
             with st.session_state.warning_container:
-                # Use markdown with HTML for more visible styling
                 st.markdown(f"""
                 <div style="background-color:#FF0000; padding:10px; border-radius:5px">
                 <h2 style="color:white; text-align:center">🚨 THREAT DETECTED: {detected_str}</h2>
                 </div>
                 """, unsafe_allow_html=True)
-                
-                # Keep the warning visible for a few seconds
+
                 time.sleep(2)
-                
-                # Clear the warning (replace with empty content)
+
                 st.markdown("", unsafe_allow_html=True)
 
         # Sound Alert
@@ -160,8 +152,7 @@ class ThreatDetectionApp:
     def run_camera_detection(self, settings):
         """Main camera detection logic"""
         st.title("🚨 Live Threat Detection")
-        
-        # Create a persistent area for alerts at the top of the page
+
         alert_area = st.empty()
         
         model = self.custom_model if settings['mode'] == "Custom Detection" and self.custom_model else self.default_model
@@ -180,8 +171,7 @@ class ThreatDetectionApp:
         
         # Stop button
         stop_button = st.button("Stop Detection")
-        
-        # Camera setup
+
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
             st.error("Could not open camera!")
@@ -205,19 +195,16 @@ class ThreatDetectionApp:
             
             # Show status
             if threat_detected:
-                # Update alert area with warning
                 alert_area.error(f"🚨 THREAT DETECTED: {', '.join(set(detected_classes))}")
                 status.error("⚠️ THREAT DETECTED!")
                 count += 1
                 detection_count.metric("Threats Detected", count)
-                
-                # Trigger all configured warnings
+ 
                 self.trigger_warnings(settings, detected_classes)
             else:
                 status.success("✅ Monitoring")
                 alert_area.empty()
-        
-        # Cleanup
+
         cap.release()
         st.success("Detection Stopped")
 
@@ -225,7 +212,6 @@ class ThreatDetectionApp:
         """Main application runner"""
         settings = self.render_sidebar()
 
-        # Add descriptive text
         st.title("🛡️ Threat Detection System")
         st.markdown("""
         This system monitors for security threats using your camera.
