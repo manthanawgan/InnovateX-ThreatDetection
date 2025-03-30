@@ -46,11 +46,11 @@ class ThreatDetectionApp:
     def load_models(self):
         """Load pre-trained and custom models"""
         try:
-            self.default_model = YOLO('yolov8n.pt')          # Default YOLO model
+            self.default_model = YOLO('best.pt')          # Default YOLO model
             
             # Optional: Load custom trained model if exists
             try:
-                self.custom_model = YOLO('path/to/your/custom/best.pt')
+                self.custom_model = YOLO('my_model.pt')
             except:
                 self.custom_model = None
                 st.warning("⚠️ Custom model not found! Using default model.")
