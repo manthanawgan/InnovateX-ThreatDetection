@@ -6,6 +6,7 @@ import tempfile
 import time
 import pygame
 import os
+import threading
 
 class ThreatDetectionApp:
     def __init__(self):
@@ -15,8 +16,15 @@ class ThreatDetectionApp:
             layout="wide"
         )
         
+        # Initialize session state variables
         if 'detection_active' not in st.session_state:
             st.session_state.detection_active = False
+        
+        if 'last_alert_time' not in st.session_state:
+            st.session_state.last_alert_time = 0
+            
+        if 'warning_placeholder' not in st.session_state:
+            st.session_state.warning_placeholder = None
 
         pygame.mixer.init(frequency=44100, size=-16, channels=1, buffer=512)
 
@@ -101,11 +109,11 @@ class ThreatDetectionApp:
             for box in results.boxes:
                 detected_classes.append(class_names[int(box.cls[0])])
 
-        # Define the detection criteria
+        # Define the detection criteria - expanded to catch more possible threat labels
         if mode == "Thief Detection":
-            threat_detected = any(cls in ["thief", "robber"] for cls in detected_classes)
+            threat_detected = any(cls.lower() in ["thief", "robber", "person", "intruder", "burglar"] for cls in detected_classes)
         elif mode == "Weapon Detection":
-            threat_detected = any(cls in ["gun", "knife"] for cls in detected_classes)
+            threat_detected = any(cls.lower() in ["gun", "knife", "pistol", "rifle", "weapon", "handgun", "shotgun"] for cls in detected_classes)
         else:  # Custom detection mode
             threat_detected = len(detected_classes) > 0
 
@@ -116,6 +124,26 @@ class ThreatDetectionApp:
         """Trigger various warning mechanisms"""
         detected_str = ', '.join(set(detected_classes)) if detected_classes else "Potential Threat"
 
+        # Create a fixed location for warning messages
+        if 'Visual Alert' in settings['warnings']:
+            # Create a persistent container for warnings if it doesn't exist
+            if 'warning_container' not in st.session_state:
+                st.session_state.warning_container = st.container()
+            
+            with st.session_state.warning_container:
+                # Use markdown with HTML for more visible styling
+                st.markdown(f"""
+                <div style="background-color:#FF0000; padding:10px; border-radius:5px">
+                <h2 style="color:white; text-align:center">🚨 THREAT DETECTED: {detected_str}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Keep the warning visible for a few seconds
+                time.sleep(2)
+                
+                # Clear the warning (replace with empty content)
+                st.markdown("", unsafe_allow_html=True)
+
         # Sound Alert
         if 'Sound Alert' in settings['warnings'] and self.warning_sound_path:
             try:
@@ -125,28 +153,41 @@ class ThreatDetectionApp:
             except Exception as e:
                 st.warning(f"Could not play warning sound: {e}")
 
-        # Visual Alert
-        if 'Visual Alert' in settings['warnings']:
-            warning_placeholder = st.empty()
-            warning_placeholder.error(f"🚨 THREAT DETECTED: {detected_str}")
-            time.sleep(2)
-            warning_placeholder.empty()
-
         # Popup Notification
         if 'Popup Notification' in settings['warnings']:
-            st.toast(f"⚠️ Threat Detected: {detected_str}")
+            st.toast(f"⚠️ Threat Detected: {detected_str}", icon="🚨")
 
     def run_camera_detection(self, settings):
         """Main camera detection logic"""
         st.title("🚨 Live Threat Detection")
         
+        # Create a persistent area for alerts at the top of the page
+        alert_area = st.empty()
+        
         model = self.custom_model if settings['mode'] == "Custom Detection" and self.custom_model else self.default_model
 
-        cap = cv2.VideoCapture(0)
+        # Create status indicators
+        status_col1, status_col2 = st.columns(2)
+        with status_col1:
+            status = st.empty()
+        with status_col2:
+            detection_count = st.empty()
+            count = 0
+            detection_count.metric("Threats Detected", count)
         
+        # Create frame display area
         frame_placeholder = st.empty()
+        
+        # Stop button
         stop_button = st.button("Stop Detection")
         
+        # Camera setup
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            st.error("Could not open camera!")
+            return
+        
+        # Main detection loop
         while not stop_button:
             ret, frame = cap.read()
             if not ret:
@@ -158,14 +199,25 @@ class ThreatDetectionApp:
                 frame, model, settings['confidence'], settings['mode']
             )
             
-            # Trigger warnings if threat detected
-            if threat_detected:
-                self.trigger_warnings(settings, detected_classes)
-            
-            # Display processed frame
+            # Display the frame first (for better performance)
             if annotated_frame is not None:
                 frame_placeholder.image(annotated_frame, channels="BGR", use_column_width=True)
-
+            
+            # Show status
+            if threat_detected:
+                # Update alert area with warning
+                alert_area.error(f"🚨 THREAT DETECTED: {', '.join(set(detected_classes))}")
+                status.error("⚠️ THREAT DETECTED!")
+                count += 1
+                detection_count.metric("Threats Detected", count)
+                
+                # Trigger all configured warnings
+                self.trigger_warnings(settings, detected_classes)
+            else:
+                status.success("✅ Monitoring")
+                alert_area.empty()
+        
+        # Cleanup
         cap.release()
         st.success("Detection Stopped")
 
@@ -173,7 +225,14 @@ class ThreatDetectionApp:
         """Main application runner"""
         settings = self.render_sidebar()
 
-        if st.sidebar.button("Start Threat Detection"):
+        # Add descriptive text
+        st.title("🛡️ Threat Detection System")
+        st.markdown("""
+        This system monitors for security threats using your camera.
+        Adjust settings in the sidebar and click below to start detection.
+        """)
+
+        if st.sidebar.button("Start Threat Detection", type="primary"):
             self.run_camera_detection(settings)
 
 def main():
